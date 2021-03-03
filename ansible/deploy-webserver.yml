@@ -13,17 +13,17 @@
         name: WebDMZ
         description: Security Group for Web Server allowing port for http and ssh
         rules:
-        - proto: tcp
-          from_port: 22
-          to_port: 22
-          cidr_ip: "{{ my_ip_address.stdout|trim }}/32"
-        - proto: tcp
-          from_port: 80
-          to_port: 80
-          cidr_ip: "{{ my_ip_address.stdout|trim }}/32"
+          - proto: tcp
+            from_port: 22
+            to_port: 22
+            cidr_ip: "{{ my_ip_address.stdout|trim }}/32"
+          - proto: tcp
+            from_port: 80
+            to_port: 80
+            cidr_ip: "{{ my_ip_address.stdout|trim }}/32"
         rules_egress:
-        - proto: all
-          cidr_ip: 0.0.0.0/0
+          - proto: all
+            cidr_ip: 0.0.0.0/0
     
     - name: Launching EC2 instance
       ec2:
@@ -73,7 +73,7 @@
         src: web/index.html
         dest: /var/www/html/
 
-    - name: Starting httpd services
+    - name: Starting httpd service
       become: true
       service:
         name: "httpd"
