@@ -1,0 +1,81 @@
+- hosts: localhost
+  tasks:
+    - name: Getting my public IP address
+      script: whats_my_ip.py
+      register: my_ip_address
+
+    - name: Getting subnet ID
+      script: get_subnet_id.py
+      register: subnet_id
+
+    - name: Creating Security Group for WebServer on AWS
+      ec2_group:
+        name: WebDMZ
+        description: Security Group for Web Server allowing port for http and ssh
+        rules:
+        - proto: tcp
+          from_port: 22
+          to_port: 22
+          cidr_ip: "{{ my_ip_address.stdout|trim }}/32"
+        - proto: tcp
+          from_port: 80
+          to_port: 80
+          cidr_ip: "{{ my_ip_address.stdout|trim }}/32"
+        rules_egress:
+        - proto: all
+          cidr_ip: 0.0.0.0/0
+    
+    - name: Launching EC2 instance
+      ec2:
+        key_name: "My_Test_KeyPair"
+        instance_type: "t2.micro"
+        region: us-east-1
+        image: "ami-0915bcb5fa77e4892"
+        wait: true
+        group: WebDMZ
+        count: 1
+        state: present
+        vpc_subnet_id: "{{ subnet_id.stdout|trim }}"
+        assign_public_ip: true
+        instance_tags:
+          Name: Webserver01
+      register: ec2
+
+    - name: Adding ec2 instance to host group
+      add_host:
+        hostname: "{{ item.public_ip|trim }}"
+        groupname: webserver
+      loop: "{{ ec2.instances }}"
+
+    - name: Waiting for SSH to be available
+      wait_for:
+        host: "{{ item.public_dns_name|trim }}"
+        port: 22
+        state: started
+      loop: "{{ ec2.instances|trim }}"
+
+    - debug: var=ec2.instances[0].public_dns_name
+
+- hosts: webserver
+  tasks:
+    - name: Running yum update
+      yum: update_cache=yes
+
+    - name: Installing httpd software
+      become: true
+      package:
+        name: "httpd"
+        state: present
+
+    - name: Copying webpage
+      become: true
+      copy:
+        src: web/index.html
+        dest: /var/www/html/
+
+    - name: Starting httpd services
+      become: true
+      service:
+        name: "httpd"
+        state: started
+        enabled: true
