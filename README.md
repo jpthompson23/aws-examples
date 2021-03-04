@@ -1,5 +1,5 @@
 # aws-examples
-AWS deployment examples using ansible
+AWS deployment examples using ansible and CloudFormation
 
 Example .ansible.cfg file (copy to home directory):
 ```
