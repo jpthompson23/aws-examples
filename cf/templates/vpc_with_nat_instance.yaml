@@ -1,4 +1,5 @@
-Description:  This template deploys a VPC with a public and private subnet.
+Description: >
+  This template deploys a VPC with a public and private subnet.
   It deploys an internet gateway, with a default route on the public subnet.
 
 Parameters:
@@ -22,7 +23,7 @@ Parameters:
     Default: 192.168.20.0/24
 
 Resources:
-  VPC:
+  Vpc:
     Type: AWS::EC2::VPC
     Properties:
       CidrBlock: !Ref VpcCIDR
@@ -30,50 +31,50 @@ Resources:
       EnableDnsHostnames: true
       Tags:
         - Key: Name
-          Value: !Sub "${Env}-vpc"
+          Value: !Sub "${AWS::StackName}"
 
   InternetGateway:
     Type: AWS::EC2::InternetGateway
     Properties:
       Tags:
         - Key: Name
-          Value: !Sub "${Env}-ig"
+          Value: !Sub "${AWS::StackName}-igw"
 
   InternetGatewayAttachment:
     Type: AWS::EC2::VPCGatewayAttachment
     Properties:
       InternetGatewayId: !Ref InternetGateway
-      VpcId: !Ref VPC
+      VpcId: !Ref Vpc
 
   PublicSubnet:
     Type: AWS::EC2::Subnet
     Properties:
-      VpcId: !Ref VPC
-      AvailabilityZone: !Select [ 0, !GetAZs '' ]
+      VpcId: !Ref Vpc
+      AvailabilityZone: !Select [0, !GetAZs '']
       CidrBlock: !Ref PublicSubnetCIDR
       MapPublicIpOnLaunch: true
       Tags:
         - Key: Name
-          Value: !Sub "${Env}-public-subnet"
+          Value: !Sub "${AWS::StackName}-public-subnet"
 
   PrivateSubnet:
     Type: AWS::EC2::Subnet
     Properties:
-      VpcId: !Ref VPC
-      AvailabilityZone: !Select [ 0, !GetAZs  '' ]
+      VpcId: !Ref Vpc
+      AvailabilityZone: !Select [0, !GetAZs  '']
       CidrBlock: !Ref PrivateSubnetCIDR
       MapPublicIpOnLaunch: false
       Tags:
         - Key: Name
-          Value: !Sub "${Env}-private-subnet"
+          Value: !Sub "${AWS::StackName}-private-subnet"
 
   PublicRouteTable:
     Type: AWS::EC2::RouteTable
     Properties:
-      VpcId: !Ref VPC
+      VpcId: !Ref Vpc
       Tags:
         - Key: Name
-          Value: !Sub "${Env}-public-rt"
+          Value: !Sub "${AWS::StackName}-public-rt"
 
   DefaultPublicRoute:
     Type: AWS::EC2::Route
@@ -92,10 +93,10 @@ Resources:
   PrivateRouteTable:
     Type: AWS::EC2::RouteTable
     Properties:
-      VpcId: !Ref VPC
+      VpcId: !Ref Vpc
       Tags:
         - Key: Name
-          Value: !Sub "${Env}-private-rt"
+          Value: !Sub "${AWS::StackName}-private-rt"
 
   PrivateSubnetRouteTableAssociation:
     Type: AWS::EC2::SubnetRouteTableAssociation
@@ -109,7 +110,7 @@ Resources:
       RouteTableIds:
         - !Ref PrivateRouteTable
       ServiceName: !Sub 'com.amazonaws.${AWS::Region}.s3'
-      VpcId: !Ref VPC
+      VpcId: !Ref Vpc
       VpcEndpointType: Gateway
 
   NoIngressSecurityGroup:
@@ -117,14 +118,78 @@ Resources:
     Properties:
       GroupName: "no-ingress-sg"
       GroupDescription: "Security group with no ingress rule"
-      VpcId: !Ref VPC
+      VpcId: !Ref Vpc
+
+  NatInstanceSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      VpcId: !Ref Vpc
+      GroupDescription: NAT Access
+      SecurityGroupIngress:
+        # Allowing all traffic from private network
+        - IpProtocol: -1
+          SourceSecurityGroupId: !Ref NoIngressSecurityGroup
+      Tags:
+        - Key: Name
+          Value: !Sub "${AWS::StackName}-nat-sg"
+
+  NatEni:
+    Type: AWS::EC2::NetworkInterface
+    Properties:
+      Description: ENI for use with NAT instances that will not be deleted on instance termination
+      SourceDestCheck: 'false'
+      GroupSet:
+        - !Ref NatInstanceSecurityGroup
+      SubnetId: !Ref PublicSubnet
+      Tags:
+        - Key: Name
+          Value: !Sub "${AWS::StackName}-nat-eni"
+
+  AutoScalingGroupForNatInstance:
+    Type: AWS::AutoScaling::AutoScalingGroup
+    Properties:
+      AvailabilityZones:
+        - !GetAtt [PublicSubnet, AvailabilityZone]
+      MinSize: 1
+      MaxSize: 1
+      MixedInstancesPolicy:
+        InstancesDistribution:
+          OnDemandBaseCapacity: 0
+          OnDemandPercentageAboveBaseCapacity: 0
+          SpotAllocationStrategy: lowest-price
+        LaunchTemplate:
+          LaunchTemplateSpecification:
+            LaunchTemplateId: !Ref NatInstanceLaunchTemplate
+            Version: !GetAtt NatInstanceLaunchTemplate.LatestVersionNumber
+      Tags:
+        - Key: Name
+          Value: !Sub "${AWS::StackName}-nano-nat-autoscale"
+          PropagateAtLaunch: true
+
+  NatInstanceLaunchTemplate:
+    Type: AWS::EC2::LaunchTemplate
+    Properties:
+      LaunchTemplateData:
+        ImageId: "ami-0aaad069b59c768d1"
+        InstanceType: t3a.nano
+        NetworkInterfaces:
+          - DeviceIndex: 0
+            NetworkInterfaceId: !Ref NatEni
+            DeleteOnTermination: false
+
+  NatInstanceRoute:
+    Type: AWS::EC2::Route
+    Properties:
+      RouteTableId: !Ref PrivateRouteTable
+      DestinationCidrBlock: 0.0.0.0/0
+      NetworkInterfaceId: !Ref NatEni
 
 Outputs:
-  VPC:
+  Vpc:
     Description: A reference to the created VPC
-    Value: !Ref VPC
+    Value: !Ref Vpc
 
-  PublicSubnet1:
+  PublicSubnet:
     Description: A reference to the public subnet
     Value: !Ref PublicSubnet
 

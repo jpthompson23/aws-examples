@@ -19,7 +19,7 @@ def deploy():
             "Value": env_name
         }
     ]
-    with open("yaml/vpc.yaml", 'r') as f:
+    with open("templates/vpc_with_nat_instance.yaml", 'r') as f:
         template_body = f.read()
     response = cf_client.create_stack(
         StackName=stack_name,
